@@ -77,6 +77,15 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
     text = text[None]
     toc_prep = time.time()
 
+    ############## warm up   ########### to measure exact flowtron inference time 
+
+         
+    with torch.no_grad():
+        tic_warmup = time.time()
+        residual = torch.cuda.FloatTensor(1, 80, n_frames).normal_() * sigma    
+        mels, attentions = model.infer(residual, speaker_vecs, text)
+        toc_warmup = time.time()    
+
 
     tic_flowtron = time.time()
     with torch.no_grad():
@@ -110,6 +119,7 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
     dur_prep = toc_prep - tic_prep
     dur_residual = toc_residual - tic_residual
     dur_flowtron_in = toc_flowtron - toc_residual
+    dur_warmup = toc_warmup - tic_warmup 
     dur_flowtron_out = toc_flowtron - tic_residual
     dur_waveglow = toc_waveglow - tic_waveglow        
     dur_total = dur_prep + dur_flowtron_out + dur_waveglow 
@@ -121,7 +131,7 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
     str_audio = "\n generated audio : {:2.3f} samples  {:2.3f} sec  with  {:d} mel frames ".format( len_audio, dur_audio, num_frames ) 
     str_perf  = "\n total time {:2.3f} = text prep {:2.3f} + flowtron{:2.3f} + wg {:2.3f}  ".format( dur_total, dur_prep, dur_flowtron_out, dur_waveglow ) 
     str_flow   ="\n total flowtron {:2.3f} = residual cal {:2.3f} + flowtron {:2.3f}  " .format(dur_flowtron_out, dur_residual, dur_flowtron_in  ) 
-    str_rtf   = "\n RTF is {:2.3f} x   ".format(RTF ) 
+    str_rtf   = "\n RTF is {:2.3f} x  with warm up {:2.3f} ".format(RTF, dur_warmup ) 
 
     print(str_text,  str_num, str_audio, str_perf, str_flow, str_rtf  )  
 
