@@ -53,7 +53,7 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
     waveglow.eval()
 
     # load flowtron  
-    checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
+    checkpoint_dict = torch.load(flowtron_path, map_location='cpu')
     model_dict = checkpoint_dict['model'].state_dict()
     model.load_state_dict(model_dict)    
     model.cuda().eval()
