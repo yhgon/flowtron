@@ -52,9 +52,11 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
         k.float()
     waveglow.eval()
 
-    # load flowtron
-
-    model = torch.load(flowtron_path)['model'].cuda().eval()
+    # load flowtron  
+    checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
+    model_dict = checkpoint_dict['model'].state_dict()
+    model.load_state_dict(model_dict)    
+    model.cuda().eval()
 
     print("Loaded checkpoint '{}')" .format(flowtron_path))
 
