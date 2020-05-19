@@ -55,10 +55,7 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
     model = Flowtron(**model_config).cuda()
     state_dict = torch.load(flowtron_path, map_location='cpu')['state_dict']
     model.load_state_dict(state_dict)
-
-    #model.eval()
-    model.eval().half()  ################### fp16
-
+    model.eval()
     print("Loaded checkpoint '{}')" .format(flowtron_path))
 
     ignore_keys = ['training_files', 'validation_files']
@@ -75,10 +72,6 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
     speaker_vecs = trainset.get_speaker_id(speaker_id).cuda()
     text = trainset.get_text(text).cuda()
 
-    speaker_vecs.half()  ################### fp16
-    text.half()          ################### fp16
-
-
     speaker_vecs = speaker_vecs[None]
     text = text[None]
     toc_prep = time.time()
@@ -87,23 +80,21 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
     tic_flowtron = time.time()
     with torch.no_grad():
         tic_residual = time.time()
-        #residual = torch.cuda.FloatTensor(1, 80, n_frames).normal_() * sigma  
-        residual = torch.cuda.HalfTensor(1, 80, n_frames).normal_() * sigma  ################### fp16
+        residual = torch.cuda.FloatTensor(1, 80, n_frames).normal_() * sigma
         toc_residual = time.time()        
         mels, attentions = model.infer(residual, speaker_vecs, text)
         toc_flowtron = time.time()    
 
     for k in range(len(attentions)):
-        attention = torch.cat(attentions[k]).float().cpu().numpy()
+        attention = torch.cat(attentions[k]).cpu().numpy()
         fig, axes = plt.subplots(1, 2, figsize=(16, 4))
-        axes[0].imshow(mels[0].float().cpu().numpy(), origin='bottom', aspect='auto')
+        axes[0].imshow(mels[0].cpu().numpy(), origin='bottom', aspect='auto')
         axes[1].imshow(attention[:, 0].transpose(), origin='bottom', aspect='auto')
-        fig.savefig('sid{}_sigma{}_attnlayer{}.png'.format(speaker_id , sigma, k ))
+        fig.savefig('sid{}_sigma{}_attnlayer{}.png'.format(speaker_id, sigma, k))
         plt.close("all")
 
     tic_waveglow = time.time()
-    #audio = waveglow.infer(mels.half(), sigma=0.8).float()
-    audio = waveglow.infer(mels, sigma=0.8).float()  ################### fp16
+    audio = waveglow.infer(mels.half(), sigma=0.8).float()
     toc_waveglow = time.time()
 
 
@@ -153,7 +144,7 @@ if __name__ == "__main__":
                         default=400, type=int)
     parser.add_argument('-o', "--output_dir", default="results/")
     parser.add_argument("-s", "--sigma", default=0.5, type=float)
-    parser.add_argument("--seed", default=1234, type=int)   
+    parser.add_argument("--seed", default=1234, type=int)
     args = parser.parse_args()
 
     # Parse configs.  Globals nicer in this case
@@ -171,5 +162,5 @@ if __name__ == "__main__":
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = False
     infer(args.flowtron_path, args.waveglow_path, args.text, args.id,
-          args.n_frames, args.sigma, args.seed )
+          args.n_frames, args.sigma, args.seed)
 
