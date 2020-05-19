@@ -54,7 +54,7 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
 
     # load flowtron
     model = Flowtron(**model_config).cuda()
-    cpt_dict = torch.load(checkpoint_path, map_location='cpu')
+    cpt_dict = torch.load(flowtron_path )
     if 'model' in cpt_dict:
         dummy_dict = cpt_dict['model'].state_dict()
     else:
