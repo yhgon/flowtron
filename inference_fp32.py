@@ -59,7 +59,7 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
         dummy_dict = cpt_dict['model'].state_dict()
     else:
         dummy_dict = cpt_dict['state_dict']
-    model.load_state(dummy_dict)
+    model.load_state_dict(dummy_dict)
     model.eval()
 
     print("Loaded checkpoint '{}')" .format(flowtron_path))
