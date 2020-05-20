@@ -1,3 +1,4 @@
+
 ###############################################################################
 #
 #  Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
@@ -37,7 +38,7 @@ sys.path.insert(0, "tacotron2/waveglow")
 from glow import WaveGlow
 from scipy.io.wavfile import write
 
-
+pyprof.init() ########### prof.
 
 def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
           seed):
@@ -96,12 +97,14 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
         toc_warmup = time.time()                      
           
     tic_flowtron = time.time()
-    with torch.no_grad():
+    with torch.no_grad(),torch.autograd.profiler.emit_nvtx(): ########### prof.:
         tic_residual = time.time()
+        profiler.start()  ########### prof.
         #residual = torch.cuda.FloatTensor(1, 80, n_frames).normal_() * sigma  
         residual = torch.cuda.HalfTensor(1, 80, n_frames).normal_() * sigma  ################### fp16
         toc_residual = time.time()        
         mels, attentions = model.infer(residual, speaker_vecs, text)
+        profiler.stop()    ########### prof.
         toc_flowtron = time.time()    
 
     for k in range(len(attentions)):
@@ -184,4 +187,3 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = False
     infer(args.flowtron_path, args.waveglow_path, args.text, args.id,
           args.n_frames, args.sigma, args.seed )
-
