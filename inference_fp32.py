@@ -1,3 +1,4 @@
+
 ###############################################################################
 #
 #  Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
@@ -17,7 +18,7 @@
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pylab as plt
-
+import pyprof 
 import os
 import argparse
 import json
@@ -25,6 +26,7 @@ import sys
 import numpy as np
 import torch
 
+import time 
 
 from flowtron import Flowtron
 from torch.utils.data import DataLoader
@@ -36,6 +38,7 @@ sys.path.insert(0, "tacotron2/waveglow")
 from glow import WaveGlow
 from scipy.io.wavfile import write
 
+#pyprof.init() ########### prof.
 
 def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
           seed):
@@ -51,23 +54,53 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
 
     # load flowtron
     model = Flowtron(**model_config).cuda()
-    state_dict = torch.load(flowtron_path, map_location='cpu')['state_dict']
-    model.load_state_dict(state_dict)
+    cpt_dict = torch.load(flowtron_path )
+    if 'model' in cpt_dict:
+        dummy_dict = cpt_dict['model'].state_dict()
+    else:
+        dummy_dict = cpt_dict['state_dict']
+    model.load_state_dict(dummy_dict)
     model.eval()
+
     print("Loaded checkpoint '{}')" .format(flowtron_path))
 
     ignore_keys = ['training_files', 'validation_files']
     trainset = Data(
         data_config['training_files'],
         **dict((k, v) for k, v in data_config.items() if k not in ignore_keys))
+
+    tic_prep = time.time()
+
+    str_text = text 
+    num_char = len(str_text)
+    num_word = len(str_text.split() )
+
     speaker_vecs = trainset.get_speaker_id(speaker_id).cuda()
     text = trainset.get_text(text).cuda()
+
     speaker_vecs = speaker_vecs[None]
     text = text[None]
+    toc_prep = time.time()
 
+    ############## warm up   ########### to measure exact flowtron inference time 
+
+         
     with torch.no_grad():
-        residual = torch.cuda.FloatTensor(1, 80, n_frames).normal_() * sigma
+        tic_warmup = time.time()
+        residual = torch.cuda.FloatTensor(1, 80, n_frames).normal_() * sigma    
         mels, attentions = model.infer(residual, speaker_vecs, text)
+        toc_warmup = time.time()    
+
+
+    tic_flowtron = time.time()
+    with torch.no_grad() :#,torch.autograd.profiler.emit_nvtx(): ########### prof.
+        tic_residual = time.time()
+        residual = torch.cuda.FloatTensor(1, 80, n_frames).normal_() * sigma
+        toc_residual = time.time()
+       # profiler.start()  ########### prof.
+        mels, attentions = model.infer(residual, speaker_vecs, text)
+       # profiler.stop()    ########### prof.
+        toc_flowtron = time.time()    
 
     for k in range(len(attentions)):
         attention = torch.cat(attentions[k]).cpu().numpy()
@@ -77,11 +110,39 @@ def infer(flowtron_path, waveglow_path, text, speaker_id, n_frames, sigma,
         fig.savefig('sid{}_sigma{}_attnlayer{}.png'.format(speaker_id, sigma, k))
         plt.close("all")
 
+    tic_waveglow = time.time()
     audio = waveglow.infer(mels.half(), sigma=0.8).float()
+    toc_waveglow = time.time()
+
+
     audio = audio.cpu().numpy()[0]
     # normalize audio for now
     audio = audio / np.abs(audio).max()
-    print(audio.shape)
+
+    len_audio = len(audio)
+    dur_audio = len_audio / 22050
+    num_frames = int(len_audio / 256)
+    
+    dur_prep = toc_prep - tic_prep
+    dur_residual = toc_residual - tic_residual
+    dur_flowtron_in = toc_flowtron - toc_residual
+    dur_warmup = toc_warmup - tic_warmup 
+    dur_flowtron_out = toc_flowtron - tic_residual
+    dur_waveglow = toc_waveglow - tic_waveglow        
+    dur_total = dur_prep + dur_flowtron_out + dur_waveglow 
+
+    RTF =  dur_audio / dur_total
+
+    str_text =  "\n text : " + str_text
+    str_num   = "\n text {:d} char {:d} words  ".format(num_char, num_word ) 
+    str_audio = "\n generated audio : {:2.3f} samples  {:2.3f} sec  with  {:d} mel frames ".format( len_audio, dur_audio, num_frames ) 
+    str_perf  = "\n total time {:2.3f} = text prep {:2.3f} + flowtron{:2.3f} + wg {:2.3f}  ".format( dur_total, dur_prep, dur_flowtron_out, dur_waveglow ) 
+    str_flow   ="\n total flowtron {:2.3f} = residual cal {:2.3f} + flowtron {:2.3f}  " .format(dur_flowtron_out, dur_residual, dur_flowtron_in  ) 
+    str_rtf   = "\n RTF is {:2.3f} x  with warm up {:2.3f} ".format(RTF, dur_warmup ) 
+
+    print(str_text,  str_num, str_audio, str_perf, str_flow, str_rtf  )  
+
+
     write("sid{}_sigma{}.wav".format(speaker_id, sigma),
           data_config['sampling_rate'], audio)
 
