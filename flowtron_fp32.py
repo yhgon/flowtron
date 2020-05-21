@@ -425,8 +425,8 @@ class AR_Step(torch.nn.Module):
                                          n_text_channels, n_attn_channels,)
         self.dense_layer = DenseLayer(in_dim=n_hidden,
                                       sizes=[n_hidden, n_hidden])
-        self.n_frames_max = 3200  ## need to change 
-        self.dummy = torch.cuda.FloatTensor(1, n_mel_channels, self.n_frames_max).zero_()
+        self.n_batch_max = 8  ## TODO 
+        self.dummy = torch.cuda.FloatTensor(1, self.n_batch_max,  n_mel_channels).zero_() # prealloc dummy seq_leg x batch x dim(80)
         if add_gate:
             self.gate_threshold = 0.5
             self.gate_layer = LinearNorm(n_hidden+n_attn_channels, 1, bias=True,
@@ -459,7 +459,7 @@ class AR_Step(torch.nn.Module):
         return hidden_vectors
 
     def forward(self, mel, text, mask, out_lens):
-        dummy = self.dummy[:mel.size(2)] # dummy = torch.FloatTensor(1, mel.size(1), mel.size(2)).zero_()
+        dummy = torch.FloatTensor(1, mel.size(1), mel.size(2)).zero_()
         dummy = dummy.type(mel.type())
         # seq_len x batch x dim
         mel0 = torch.cat([dummy, mel[:-1, :, :]], 0)
@@ -508,7 +508,7 @@ class AR_Step(torch.nn.Module):
         total_output = []  # seems 10FPS faster than pre-allocation
         output = None
         #dummy = torch.cuda.FloatTensor(1, residual.size(1), residual.size(2)).zero_()
-        dummy = torch.narrow(self.dummpy, 2, 0, residual.size(2) )  # use preallocated dummy 
+        dummy = self.dummy[:,:residual.size(1), :residual.size(2)]   # use preallocated dummy seq_leg x batch x dim(80)
         for i in range(0, residual.size(0)):
             if i == 0:
                 attention_hidden, (h, c) = self.attention_lstm(dummy)
